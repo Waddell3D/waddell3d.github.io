@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M2W 100k — Course Planner</title>
+
+<script>
+// ─────────────────────────────────────────────────────────
+//  EDIT_MODE — set false before sharing with your crew.
+//  When false: all editing tools are hidden and disabled.
+//  When true:  click the map to place notes, edit/delete
+//              them in the side panel, then click
+//              "Export for Crew" to download a ready-to-share
+//              copy of this file with notes embedded and
+//              EDIT_MODE already set to false.
+// ─────────────────────────────────────────────────────────
+const EDIT_MODE = false;
+
+// Notes are embedded here when you export for crew.
+// You can also paste a previously exported notes array here directly.
+const EMBEDDED_NOTES = [];
+</script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=Barlow+Condensed:wght@400;600;700&display=swap');
+
+:root {
+  --dirt:   #c8a96e;
+  --forest: #3d5a3e;
+  --bark:   #1a1208;
+  --moss:   #6b7c4a;
+  --stone:  #8a8070;
+  --cream:  #f0e8d8;
+  --ember:  #e8622a;
+  --panel:  #12100a;
+  --border: rgba(200,169,110,0.25);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100vh;background:var(--bark);color:var(--cream);font-family:'Barlow Condensed',sans-serif;overflow:hidden;display:flex;flex-direction:column;}
+
+/* ── TOP BAR ── */
+#topbar{
+  height:48px;min-height:48px;
+  background:var(--panel);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:0;padding:0;
+}
+#app-title{
+  font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;
+  color:var(--cream);padding:0 20px;border-right:1px solid var(--border);white-space:nowrap;
+}
+#app-title span{color:var(--dirt);}
+#app-subtitle{
+  font-family:'DM Mono',monospace;font-size:10px;color:var(--stone);
+  padding:0 16px;letter-spacing:.5px;
+}
+#topbar-right{margin-left:auto;display:flex;align-items:center;gap:0;}
+.topbar-btn{
+  display:flex;align-items:center;gap:6px;
+  padding:0 16px;height:48px;
+  font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;
+  color:var(--stone);cursor:pointer;border:none;background:transparent;
+  border-left:1px solid var(--border);transition:all .2s;white-space:nowrap;
+}
+.topbar-btn:hover{color:var(--cream);background:rgba(200,169,110,0.06);}
+.topbar-btn.primary{color:var(--dirt);}
+.topbar-btn.primary:hover{background:rgba(200,169,110,0.12);}
+.topbar-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+#edit-hint{
+  font-family:'DM Mono',monospace;font-size:9px;color:var(--moss);
+  padding:0 16px;letter-spacing:.5px;border-left:1px solid var(--border);
+  height:48px;display:flex;align-items:center;
+}
+
+/* ── MAIN LAYOUT ── */
+#main{flex:1;display:flex;overflow:hidden;}
+#map-pane{flex:1;position:relative;}
+#map{width:100%;height:100%;}
+.leaflet-control-attribution{font-size:9px!important;opacity:.4;}
+
+/* ── SIDE PANEL ── */
+#side-panel{
+  width:320px;min-width:320px;
+  background:var(--panel);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+#panel-header{
+  padding:12px 14px 10px;border-bottom:1px solid var(--border);
+  background:rgba(200,169,110,0.04);flex-shrink:0;
+}
+#panel-title{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;color:var(--dirt);}
+#panel-subtitle{font-family:'DM Mono',monospace;font-size:9px;color:var(--stone);margin-top:2px;letter-spacing:.3px;}
+
+/* ── CHECKPOINT LIST (fixed) ── */
+#checkpoints-section{border-bottom:1px solid var(--border);flex-shrink:0;}
+.section-header{
+  padding:7px 14px;font-size:9px;font-weight:700;letter-spacing:2px;
+  color:var(--moss);text-transform:uppercase;background:rgba(0,0,0,.15);
+}
+.cp-item{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 14px;border-bottom:1px solid rgba(200,169,110,.06);
+  cursor:pointer;transition:background .15s;
+}
+.cp-item:hover{background:rgba(200,169,110,.05);}
+.cp-dot{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+  background:rgba(200,169,110,.3);border:1.5px solid var(--dirt);
+}
+.cp-name{font-size:12px;font-weight:600;color:var(--cream);}
+.cp-meta{font-family:'DM Mono',monospace;font-size:9px;color:var(--stone);margin-top:1px;}
+
+/* ── NOTES LIST (scrollable) ── */
+#notes-section{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+#notes-list{flex:1;overflow-y:auto;}
+.note-item{
+  display:flex;align-items:flex-start;gap:8px;
+  padding:10px 14px;border-bottom:1px solid var(--border);
+  cursor:pointer;transition:background .15s;
+}
+.note-item:hover{background:rgba(200,169,110,.05);}
+.note-item.selected{background:rgba(200,169,110,.09);border-left:2px solid var(--dirt);}
+.note-icon{
+  width:20px;height:20px;border-radius:50%;flex-shrink:0;margin-top:1px;
+  display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;
+}
+.note-icon.info    {background:rgba(200,169,110,.15);color:var(--dirt);border:1px solid rgba(200,169,110,.4);}
+.note-icon.crew    {background:rgba(61,90,62,.3);color:#a8d48a;border:1px solid rgba(107,124,74,.5);}
+.note-icon.caution {background:rgba(232,98,42,.15);color:var(--ember);border:1px solid rgba(232,98,42,.4);}
+.note-icon.parking {background:rgba(100,149,237,.15);color:#7ab3f5;border:1px solid rgba(100,149,237,.4);}
+.note-body{flex:1;min-width:0;}
+.note-name{font-size:13px;font-weight:600;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.note-desc{font-size:11px;color:rgba(240,232,216,.5);margin-top:2px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.note-actions{display:flex;gap:3px;flex-shrink:0;}
+.note-btn{
+  width:20px;height:20px;border:1px solid var(--border);border-radius:2px;
+  background:transparent;color:var(--stone);cursor:pointer;font-size:11px;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;
+}
+.note-btn:hover{color:var(--cream);border-color:var(--stone);}
+.note-btn.del:hover{color:#c0452a;border-color:#c0452a;}
+
+.empty-state{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:30px 20px;text-align:center;color:var(--stone);
+}
+.empty-state .icon{font-size:28px;margin-bottom:10px;opacity:.4;}
+.empty-state p{font-size:12px;line-height:1.5;max-width:200px;}
+
+/* ── NOTE EDITOR FORM ── */
+#note-editor{
+  border-top:1px solid var(--border);background:rgba(200,169,110,.03);
+  padding:12px;flex-shrink:0;
+}
+#note-editor.hidden{display:none;}
+.form-title{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--moss);text-transform:uppercase;margin-bottom:10px;}
+.form-row{margin-bottom:8px;}
+.form-label{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--stone);text-transform:uppercase;margin-bottom:3px;display:block;}
+.form-input{
+  width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border);
+  color:var(--cream);font-family:'Barlow Condensed',sans-serif;font-size:13px;
+  padding:6px 8px;border-radius:2px;outline:none;transition:border-color .2s;
+}
+.form-input:focus{border-color:rgba(200,169,110,.6);}
+select.form-input{cursor:pointer;}
+textarea.form-input{resize:vertical;min-height:60px;line-height:1.4;}
+.form-actions{display:flex;gap:6px;margin-top:10px;}
+.form-btn{
+  flex:1;padding:7px;font-family:'Barlow Condensed',sans-serif;font-size:12px;
+  font-weight:700;letter-spacing:1px;border:1px solid var(--border);border-radius:2px;
+  cursor:pointer;transition:all .2s;text-transform:uppercase;
+}
+.form-btn.save{background:rgba(61,90,62,.5);color:var(--cream);border-color:var(--moss);}
+.form-btn.save:hover{background:var(--forest);}
+.form-btn.cancel{background:transparent;color:var(--stone);}
+.form-btn.cancel:hover{color:var(--cream);}
+
+/* ── FLOATING MAP LABELS ── */
+.map-label{
+  font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:1px;
+  color:#f0e8d8;white-space:nowrap;pointer-events:none;
+  text-shadow:-1px -1px 0 rgba(0,0,0,.9),1px -1px 0 rgba(0,0,0,.9),
+    -1px 1px 0 rgba(0,0,0,.9),1px 1px 0 rgba(0,0,0,.9),0 2px 6px rgba(0,0,0,.7);
+  padding-bottom:4px;transform:translateX(-50%);display:inline-block;
+}
+.map-label.start {color:#b8d4a0;}
+.map-label.finish{color:#f4a07a;}
+.map-label.aid   {color:#e8c97a;}
+
+/* ── MAP CLICK HINT ── */
+#map-hint{
+  position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+  background:rgba(18,13,8,.88);border:1px solid var(--border);border-radius:3px;
+  padding:5px 12px;font-family:'DM Mono',monospace;font-size:9px;color:var(--stone);
+  letter-spacing:.5px;z-index:1000;pointer-events:none;
+}
+
+/* ── TOAST ── */
+#toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:rgba(61,90,62,.9);border:1px solid var(--moss);border-radius:3px;
+  padding:7px 18px;font-family:'DM Mono',monospace;font-size:10px;color:var(--cream);
+  letter-spacing:.5px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;
+}
+#toast.show{opacity:1;}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(200,169,110,.2);border-radius:2px;}
+::-webkit-scrollbar-thumb:hover{background:rgba(200,169,110,.4);}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="app-title">M2W <span>100k</span></div>
+  <div id="app-subtitle">Melbourne to Warburton · Course Planner</div>
+  <div id="topbar-right">
+    <div id="edit-hint" style="display:none">Click map to place a note</div>
+    <button class="topbar-btn" id="btn-fit" onclick="fitCourse()">
+      <svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+      Fit Course
+    </button>
+    <button class="topbar-btn primary" id="btn-export" onclick="exportForCrew()" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      Export for Crew
+    </button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="map-pane">
+    <div id="map"></div>
+    <div id="map-hint" style="display:none">Click anywhere on the map to add a note</div>
+  </div>
+
+  <div id="side-panel">
+    <div id="panel-header">
+      <div id="panel-title">Course Notes</div>
+      <div id="panel-subtitle">Melbourne to Warburton 100k</div>
+    </div>
+
+    <!-- Fixed checkpoints -->
+    <div id="checkpoints-section">
+      <div class="section-header">Aid Stations</div>
+      <div id="checkpoint-list"></div>
+    </div>
+
+    <!-- Scrollable notes -->
+    <div id="notes-section">
+      <div class="section-header">Notes &amp; Labels</div>
+      <div id="notes-list">
+        <div class="empty-state">
+          <div class="icon">📍</div>
+          <p id="empty-msg">No notes yet.</p>
+        </div>
+      </div>
+      <div id="note-editor" class="hidden">
+        <div class="form-title" id="editor-title">New Note</div>
+        <div class="form-row">
+          <label class="form-label">Title</label>
+          <input type="text" id="note-name" class="form-input" placeholder="e.g. Gate access — code 1234">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Type</label>
+          <select id="note-type" class="form-input">
+            <option value="info">Info</option>
+            <option value="crew">Crew Access</option>
+            <option value="caution">Caution</option>
+            <option value="parking">Parking</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Details</label>
+          <textarea id="note-desc" class="form-input" placeholder="Directions, access codes, things to know…"></textarea>
+        </div>
+        <div class="form-actions">
+          <button class="form-btn save" onclick="saveNote()">Save Note</button>
+          <button class="form-btn cancel" onclick="cancelNote()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+// COURSE DATA
+// ══════════════════════════════════════════
+const TRACK_POINTS = [[-37.82645,144.97989],[-37.82779,144.9837],[-37.82768,144.98498],[-37.82958,144.988319],[-37.83356,144.99484],[-37.83311,145.00057],[-37.83109,145.00395],[-37.83179,145.00866],[-37.83189,145.01016],[-37.83036,145.01397],[-37.83168,145.01684],[-37.83175,145.02123],[-37.83401,145.02362],[-37.83171,145.02738],[-37.83058,145.0269],[-37.82603,145.02202],[-37.82652,145.01862],[-37.82231,145.01542],[-37.81941,145.01462],[-37.81632,145.01419],[-37.81093,145.01538],[-37.81073,145.01111],[-37.80954,145.01006],[-37.80744,145.00939],[-37.80639,145.00494],[-37.80596,145.00113],[-37.80512,145.00219],[-37.80578,145.00537],[-37.80442,145.00867],[-37.80249,145.00922],[-37.80178,145.01104],[-37.8011,145.0127],[-37.8023,145.013659],[-37.80385,145.01793],[-37.80309,145.02174],[-37.800849,145.02149],[-37.79928,145.02121],[-37.79692,145.02148],[-37.79557,145.01878],[-37.79379,145.01524],[-37.79294,145.0155],[-37.7934,145.02],[-37.79179,145.02072],[-37.788559,145.01805],[-37.7878,145.02112],[-37.78776,145.02619],[-37.78824,145.02814],[-37.79029,145.03034],[-37.79002,145.03835],[-37.79003,145.04302],[-37.79033,145.045],[-37.79046,145.04709],[-37.79055,145.04884],[-37.78812,145.0552],[-37.78469,145.06002],[-37.78342,145.06035],[-37.78312,145.06094],[-37.78254,145.06061],[-37.78151,145.06195],[-37.78368,145.06365],[-37.78507,145.06557],[-37.78485,145.0676],[-37.78395,145.07051],[-37.78351,145.07234],[-37.78227,145.07543],[-37.78166,145.07649],[-37.78107,145.07874],[-37.78011,145.0821],[-37.7812,145.0838],[-37.78132,145.0879],[-37.78107,145.09238],[-37.78113,145.09511],[-37.78333,145.09867],[-37.7855,145.09968],[-37.78733,145.10075],[-37.78891,145.10243],[-37.79111,145.10444],[-37.79318,145.1077],[-37.79496,145.1101],[-37.79529,145.11185],[-37.795789,145.11364],[-37.79602,145.11578],[-37.79669,145.11791],[-37.79754,145.12062],[-37.798139,145.12456],[-37.79796,145.12672],[-37.79807,145.13423],[-37.79722,145.1385],[-37.79723,145.14025],[-37.79707,145.14188],[-37.79798,145.1456],[-37.79934,145.14774],[-37.79968,145.15003],[-37.79993,145.15234],[-37.80007,145.15374],[-37.80003,145.15518],[-37.8001,145.15744],[-37.80045,145.16015],[-37.80157,145.16288],[-37.80193,145.16595],[-37.80263,145.16762],[-37.80347,145.17209],[-37.80351,145.17494],[-37.80311,145.17854],[-37.80299,145.18192],[-37.8021,145.18408],[-37.80126,145.18628],[-37.80055,145.18806],[-37.79966,145.19247],[-37.80008,145.1945],[-37.8003,145.1959],[-37.80106,145.19633],[-37.8021,145.19915],[-37.80316,145.20161],[-37.8041,145.20257],[-37.80419,145.20447],[-37.80548,145.20486],[-37.80595,145.20578],[-37.80608,145.20722],[-37.80697,145.20788],[-37.80813,145.20782],[-37.80918,145.20961],[-37.81068,145.21102],[-37.81128,145.21207],[-37.81156,145.213],[-37.81288,145.21451],[-37.81321,145.21559],[-37.81259,145.21677],[-37.81217,145.21811],[-37.81393,145.21748],[-37.81684,145.2175],[-37.81749,145.21749],[-37.82035,145.2176],[-37.83223,145.21794],[-37.83313,145.21691],[-37.8378,145.21712],[-37.83953,145.21418],[-37.83812,145.2217],[-37.83948,145.22774],[-37.84029,145.23252],[-37.83972,145.23534],[-37.83879,145.23905],[-37.83846,145.24531],[-37.83784,145.25082],[-37.83638,145.25764],[-37.83643,145.26014],[-37.83655,145.26318],[-37.832299,145.26498],[-37.83016,145.26381],[-37.82753,145.26385],[-37.82435,145.26434],[-37.82217,145.26417],[-37.8192,145.26584],[-37.81629,145.26797],[-37.81443,145.26955],[-37.81332,145.27053],[-37.81022,145.2731],[-37.80868,145.27708],[-37.80475,145.282549],[-37.803289,145.28454],[-37.80242,145.289179],[-37.80154,145.29459],[-37.79998,145.30294],[-37.7986,145.30849],[-37.79616,145.31547],[-37.79255,145.31695],[-37.78785,145.31988],[-37.78535,145.32146],[-37.78514,145.32239],[-37.783969,145.32381],[-37.78211,145.32664],[-37.7792,145.33017],[-37.77527,145.33313],[-37.77596,145.33882],[-37.77609,145.34339],[-37.77421,145.34473],[-37.77392,145.34523],[-37.77369,145.34873],[-37.77331,145.34862],[-37.77268,145.34874],[-37.77219,145.349],[-37.7711,145.34947],[-37.77103,145.34948],[-37.771,145.34955],[-37.77014,145.35045],[-37.77071,145.35196],[-37.77037,145.35303],[-37.76991,145.35381],[-37.76837,145.35447],[-37.76668,145.35465],[-37.76647,145.35521],[-37.76674,145.35643],[-37.76648,145.35704],[-37.76593,145.35683],[-37.76559,145.35698],[-37.76493,145.3569],[-37.7644,145.3561],[-37.76382,145.35512],[-37.7632,145.35404],[-37.76252,145.35302],[-37.76188,145.35266],[-37.76153,145.35205],[-37.7616,145.35173],[-37.76152,145.35123],[-37.76147,145.35081],[-37.76118,145.35055],[-37.76068,145.35064],[-37.76031,145.35077],[-37.75973,145.35057],[-37.75895,145.35022],[-37.75762,145.34965],[-37.75716,145.34952],[-37.75537,145.34985],[-37.75409,145.35084],[-37.75342,145.35096],[-37.75264,145.35137],[-37.75226,145.35167],[-37.75158,145.35194],[-37.7514,145.352],[-37.75101,145.35263],[-37.75019,145.35411],[-37.74873,145.35597],[-37.74826,145.35725],[-37.7482,145.35811],[-37.74826,145.35937],[-37.74876,145.36109],[-37.7507,145.36069],[-37.75152,145.36004],[-37.75239,145.35987],[-37.75482,145.35965],[-37.75734,145.35981],[-37.76048,145.36173],[-37.76364,145.36543],[-37.7653,145.36779],[-37.76681,145.37262],[-37.76891,145.37409],[-37.7702,145.37651],[-37.77211,145.37813],[-37.77374,145.37792],[-37.77647,145.3776],[-37.78107,145.37944],[-37.78291,145.37961],[-37.78535,145.38148],[-37.78577,145.3822],[-37.78624,145.38312],[-37.78784,145.38626],[-37.78853,145.38709],[-37.78897,145.39041],[-37.78612,145.39419],[-37.78289,145.39632],[-37.78177,145.40557],[-37.781149,145.41852],[-37.77836,145.42427],[-37.77725,145.42655],[-37.77722,145.43016],[-37.77773,145.43232],[-37.77285,145.4447],[-37.7692,145.45753],[-37.76318,145.46421],[-37.75894,145.46931],[-37.75798,145.49097],[-37.7602,145.505],[-37.7644,145.50781],[-37.76511,145.51564],[-37.76848,145.51974],[-37.77324,145.52363],[-37.77527,145.52776],[-37.77528,145.5334],[-37.77331,145.53699],[-37.77226,145.53798],[-37.76912,145.54158],[-37.76577,145.54691],[-37.76599,145.55112],[-37.76903,145.55516],[-37.77188,145.55999],[-37.77447,145.5672],[-37.77519,145.57292],[-37.77513,145.57839],[-37.77426,145.58093],[-37.77528,145.58378],[-37.77617,145.58524],[-37.77605,145.5884],[-37.77594,145.59027],[-37.77649,145.59378],[-37.77625,145.5997],[-37.77741,145.60471],[-37.77932,145.60724],[-37.781,145.60993],[-37.78125,145.61203],[-37.78144,145.61664],[-37.78084,145.62128],[-37.77595,145.62357],[-37.77079,145.63072],[-37.7658,145.63803],[-37.76356,145.64128],[-37.75782,145.64962],[-37.75526,145.65331],[-37.75347,145.65657],[-37.75459,145.66354],[-37.75472,145.67129],[-37.75635,145.67781],[-37.75538,145.68249],[-37.7548,145.68738],[-37.75423,145.6897],[-37.75293,145.69373],[-37.75193,145.69448],[-37.75167,145.69448]];
+
+const AID_STATIONS = [
+  {name:"Checkpoint 1",desc:"Kew Golf Club",lat:-37.78167,lon:145.06252,distKm:19.839},
+  {name:"Checkpoint 2",desc:"JW Manson Reserve",lat:-37.83981,lon:145.234469,distKm:42.283},
+  {name:"Checkpoint 3",desc:"Fred Geale Oval",lat:-37.80336,lon:145.2843,distKm:49.877},
+  {name:"Checkpoint 4",desc:"Lillydale Lake",lat:-37.76446,lon:145.35662,distKm:59.234},
+  {name:"Checkpoint 5",desc:"The Trail Cafe",lat:-37.78853,lon:145.38709,distKm:67.966},
+  {name:"Checkpoint 6",desc:"Seville Station",lat:-37.76643,lon:145.460289,distKm:75.469},
+  {name:"Checkpoint 7",desc:"Woori Yallock Station",lat:-37.77543,lon:145.52875,distKm:82.933},
+  {name:"Checkpoint 8",desc:"Yarra Junction Reserve",lat:-37.78131,lon:145.61108,distKm:91.303},
+];
+
+// ══════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════
+let notes = [];
+let noteIdCounter = 1;
+let editingId = null;
+let selectedId = null;
+let pendingLatLng = null;
+const noteMarkers = {};
+
+// ══════════════════════════════════════════
+// MAP INIT
+// ══════════════════════════════════════════
+const map = L.map('map', {
+  center: [-37.78, 145.3], zoom: 10,
+  zoomControl: true, attributionControl: true
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+// Route
+L.polyline(TRACK_POINTS, {color:'#c8a96e', weight:3, opacity:0.8, lineJoin:'round'}).addTo(map);
+
+function addLabelMarker(latlng, labelText, cssClass) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div class="map-label ${cssClass}">${labelText}</div>`,
+    iconSize: null, iconAnchor: [0, 22],
+  });
+  L.marker(latlng, {icon, interactive:false, zIndexOffset:500}).addTo(map);
+}
+
+// Start / finish
+L.circleMarker(TRACK_POINTS[0], {radius:12,color:'#6b7c4a',fillColor:'#3d5a3e',fillOpacity:1,weight:2})
+  .bindPopup('<b>START</b><br>Melbourne').addTo(map);
+addLabelMarker(TRACK_POINTS[0], 'START', 'start');
+
+L.circleMarker(TRACK_POINTS[TRACK_POINTS.length-1], {radius:12,color:'#c8a96e',fillColor:'#e8622a',fillOpacity:1,weight:2})
+  .bindPopup('<b>FINISH</b><br>Warburton').addTo(map);
+addLabelMarker(TRACK_POINTS[TRACK_POINTS.length-1], 'FINISH', 'finish');
+
+// Aid station markers
+AID_STATIONS.forEach(cp => {
+  const marker = L.circleMarker([cp.lat, cp.lon], {
+    radius:12, color:'#c8a96e', fillColor:'#2a1f14', fillOpacity:1, weight:2
+  }).addTo(map);
+  marker.bindPopup(`<b>${cp.name}</b><br>${cp.desc}<br><span style="color:#8a8070;font-size:11px">${cp.distKm.toFixed(1)} km</span>`);
+  addLabelMarker([cp.lat, cp.lon], cp.name, 'aid');
+});
+
+// Map click — add note (edit mode only)
+if (EDIT_MODE) {
+  map.on('click', e => {
+    pendingLatLng = e.latlng;
+    openEditor(null, e.latlng.lat, e.latlng.lng);
+  });
+}
+
+// ══════════════════════════════════════════
+// NOTE TYPE CONFIG
+// ══════════════════════════════════════════
+const NOTE_COLORS = {
+  info:    '#c8a96e',
+  crew:    '#7ac87a',
+  caution: '#e8622a',
+  parking: '#7ab3f5',
+};
+const NOTE_ICONS = { info:'i', crew:'C', caution:'!', parking:'P' };
+const NOTE_LABELS = { info:'Info', crew:'Crew Access', caution:'Caution', parking:'Parking' };
+
+// ══════════════════════════════════════════
+// MAP MARKERS FOR NOTES
+// ══════════════════════════════════════════
+function addNoteMarker(note) {
+  const color = NOTE_COLORS[note.type] || NOTE_COLORS.info;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width:28px;height:28px;border-radius:50%;
+      background:${color};border:2px solid rgba(240,232,216,.9);
+      box-shadow:0 2px 8px rgba(0,0,0,.5);
+      display:flex;align-items:center;justify-content:center;
+      font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;
+      color:#12100a;cursor:pointer;transform:translate(-50%,-50%);
+    ">${NOTE_ICONS[note.type]||'i'}</div>`,
+    iconSize: [0, 0], iconAnchor: [0, 0],
+  });
+  const marker = L.marker([note.lat, note.lon], {icon, draggable: EDIT_MODE});
+  marker.bindPopup(`<b>${escHtml(note.name)}</b>${note.desc ? '<br>'+escHtml(note.desc) : ''}`);
+
+  if (EDIT_MODE) {
+    marker.on('dragend', e => {
+      const ll = e.target.getLatLng();
+      const idx = notes.findIndex(n => n.id === note.id);
+      if (idx >= 0) { notes[idx].lat = ll.lat; notes[idx].lon = ll.lng; }
+      saveToStorage();
+    });
+    marker.on('click', () => { selectNote(note.id); openEditor(notes.find(n=>n.id===note.id)); });
+  } else {
+    marker.on('click', () => selectNote(note.id));
+  }
+
+  noteMarkers[note.id] = marker;
+  marker.addTo(map);
+}
+
+function removeNoteMarker(id) {
+  if (noteMarkers[id]) { map.removeLayer(noteMarkers[id]); delete noteMarkers[id]; }
+}
+
+// ══════════════════════════════════════════
+// EDITOR
+// ══════════════════════════════════════════
+function openEditor(note, lat, lon) {
+  if (!EDIT_MODE) return;
+  editingId = note ? note.id : null;
+  const editor = document.getElementById('note-editor');
+  editor.classList.remove('hidden');
+  document.getElementById('editor-title').textContent = note ? 'Edit Note' : 'New Note';
+  document.getElementById('note-name').value = note?.name ?? '';
+  document.getElementById('note-type').value = note?.type ?? 'info';
+  document.getElementById('note-desc').value = note?.desc ?? '';
+  document.getElementById('note-name').focus();
+}
+
+function saveNote() {
+  const name = document.getElementById('note-name').value.trim();
+  if (!name) { toast('Please enter a title.'); return; }
+  const type = document.getElementById('note-type').value;
+  const desc = document.getElementById('note-desc').value.trim();
+
+  if (editingId !== null) {
+    const idx = notes.findIndex(n => n.id === editingId);
+    if (idx >= 0) {
+      notes[idx] = { ...notes[idx], name, type, desc };
+      removeNoteMarker(editingId);
+      addNoteMarker(notes[idx]);
+    }
+  } else {
+    const note = { id: noteIdCounter++, name, type, desc, lat: pendingLatLng.lat, lon: pendingLatLng.lng };
+    notes.push(note);
+    addNoteMarker(note);
+  }
+
+  cancelNote();
+  renderNoteList();
+  saveToStorage();
+  toast('Note saved');
+}
+
+function cancelNote() {
+  editingId = null;
+  pendingLatLng = null;
+  document.getElementById('note-editor').classList.add('hidden');
+}
+
+function deleteNote(id) {
+  notes = notes.filter(n => n.id !== id);
+  removeNoteMarker(id);
+  if (editingId === id) cancelNote();
+  if (selectedId === id) selectedId = null;
+  renderNoteList();
+  saveToStorage();
+  toast('Note deleted');
+}
+
+function selectNote(id) {
+  selectedId = id;
+  renderNoteList();
+  const note = notes.find(n => n.id === id);
+  if (note) map.panTo([note.lat, note.lon]);
+}
+
+// ══════════════════════════════════════════
+// NOTE LIST
+// ══════════════════════════════════════════
+function renderNoteList() {
+  const list = document.getElementById('notes-list');
+  if (!notes.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">📍</div><p id="empty-msg">${EDIT_MODE ? 'Click anywhere on the map to place a note.' : 'No notes have been added.'}</p></div>`;
+    return;
+  }
+  list.innerHTML = '';
+  notes.forEach(note => {
+    const el = document.createElement('div');
+    el.className = 'note-item' + (selectedId === note.id ? ' selected' : '');
+    el.innerHTML = `
+      <div class="note-icon ${note.type}">${NOTE_ICONS[note.type]||'i'}</div>
+      <div class="note-body">
+        <div class="note-name">${escHtml(note.name)}</div>
+        ${note.desc ? `<div class="note-desc">${escHtml(note.desc)}</div>` : ''}
+        <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--stone);margin-top:2px;">${NOTE_LABELS[note.type]||'Info'}</div>
+      </div>
+      ${EDIT_MODE ? `<div class="note-actions">
+        <button class="note-btn" title="Edit" onclick="event.stopPropagation();openEditor(notes.find(n=>n.id===${note.id}))">✎</button>
+        <button class="note-btn del" title="Delete" onclick="event.stopPropagation();deleteNote(${note.id})">✕</button>
+      </div>` : ''}`;
+    el.onclick = () => selectNote(note.id);
+    list.appendChild(el);
+  });
+}
+
+// ══════════════════════════════════════════
+// CHECKPOINT LIST
+// ══════════════════════════════════════════
+function renderCheckpointList() {
+  const list = document.getElementById('checkpoint-list');
+  list.innerHTML = '';
+  AID_STATIONS.forEach(cp => {
+    const el = document.createElement('div');
+    el.className = 'cp-item';
+    el.innerHTML = `
+      <div class="cp-dot"></div>
+      <div>
+        <div class="cp-name">${cp.name}</div>
+        <div class="cp-meta">${cp.desc} · ${cp.distKm.toFixed(1)} km</div>
+      </div>`;
+    el.onclick = () => map.setView([cp.lat, cp.lon], 14);
+    list.appendChild(el);
+  });
+}
+
+// ══════════════════════════════════════════
+// FIT COURSE
+// ══════════════════════════════════════════
+function fitCourse() {
+  const bounds = L.latLngBounds(TRACK_POINTS);
+  map.fitBounds(bounds, {padding: [30, 30]});
+}
+
+// ══════════════════════════════════════════
+// STORAGE
+// ══════════════════════════════════════════
+function saveToStorage() {
+  try { localStorage.setItem('m2w_planner_notes', JSON.stringify(notes)); } catch(e) {}
+}
+
+function loadNotes(source) {
+  notes = source.map(n => ({ ...n, id: n.id ?? noteIdCounter++ }));
+  const maxId = notes.reduce((m, n) => Math.max(m, n.id), 0);
+  noteIdCounter = maxId + 1;
+  notes.forEach(addNoteMarker);
+  renderNoteList();
+}
+
+// ══════════════════════════════════════════
+// EXPORT FOR CREW
+// Generates a copy of this HTML with notes
+// embedded and EDIT_MODE set to false.
+// ══════════════════════════════════════════
+function exportForCrew() {
+  if (!EDIT_MODE) return;
+  const notesJson = JSON.stringify(notes, null, 2)
+    .split('\n').map((l, i) => i === 0 ? l : '  ' + l).join('\n');
+
+  fetch(window.location.href)
+    .then(r => r.text())
+    .then(html => {
+      let out = html
+        .replace(/const EDIT_MODE\s*=\s*true/, 'const EDIT_MODE = false')
+        .replace(/const EMBEDDED_NOTES\s*=\s*\[[\s\S]*?\];/, `const EMBEDDED_NOTES = ${notesJson};`);
+      const blob = new Blob([out], {type: 'text/html'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'm2w_course_planner_crew.html';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Exported for crew — share the downloaded file');
+    })
+    .catch(() => {
+      // Fallback: copy notes JSON to clipboard
+      navigator.clipboard.writeText(JSON.stringify(notes, null, 2))
+        .then(() => toast('Could not fetch source — notes JSON copied to clipboard instead'))
+        .catch(() => toast('Export failed. Open via a local server (python -m http.server).'));
+    });
+}
+
+// ══════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ══════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════
+renderCheckpointList();
+fitCourse();
+
+if (EDIT_MODE) {
+  document.getElementById('btn-export').style.display = '';
+  document.getElementById('edit-hint').style.display = '';
+  document.getElementById('map-hint').style.display = '';
+}
+
+// Load notes: prefer embedded (crew export), fall back to localStorage
+if (EMBEDDED_NOTES.length) {
+  loadNotes(EMBEDDED_NOTES);
+} else {
+  try {
+    const stored = localStorage.getItem('m2w_planner_notes');
+    if (stored) loadNotes(JSON.parse(stored));
+    else renderNoteList();
+  } catch(e) { renderNoteList(); }
+}
+</script>
+</body>
+</html>
